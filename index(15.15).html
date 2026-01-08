@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Cash Manager PRO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{font-family:Segoe UI,Arial;background:#eef2f6;margin:0}
+header{background:#0f172a;color:#fff;padding:12px;display:flex;justify-content:space-between;align-items:center}
+header img{height:40px}
+.container{max-width:1200px;margin:auto;padding:20px}
+.card{background:#fff;padding:15px;border-radius:10px;margin-bottom:15px;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+.hidden{display:none}
+button{width:100%;padding:8px;margin-top:8px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}
+button.admin{background:#dc2626}
+button.logout{background:#6b7280}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{border:1px solid #ccc;padding:6px;text-align:center}
+
+@media print{
+ body{width:80mm}
+ .no-print{display:none}
+}
+</style>
+</head>
+
+<body>
+
+<!-- HEADER -->
+<header>
+<div>
+<img id="logoHeader"><br>
+<b id="companyHeader"></b><br>
+<small id="companyAddress"></small><br>
+<small id="companyPhone"></small>
+</div>
+<button id="logoutBtn" class="logout hidden no-print" onclick="logout()">Déconnexion</button>
+</header>
+
+<div class="container no-print">
+
+<!-- LOGIN -->
+<div class="card" id="loginCard">
+<h3>Connexion</h3>
+<input id="user" placeholder="Utilisateur">
+<input id="pass" type="password" placeholder="Mot de passe">
+<button onclick="login()">Connexion</button>
+</div>
+
+<!-- ADMIN -->
+<div class="card hidden" id="adminZone">
+<h3>👑 Administration</h3>
+
+<input id="companyName" placeholder="Nom entreprise">
+<input id="companyAddressInput" placeholder="Adresse">
+<input id="companyPhoneInput" placeholder="Téléphone">
+<input id="companyLogo" placeholder="URL logo">
+<button class="admin" onclick="saveCompany()">Enregistrer entreprise</button>
+
+<hr>
+
+<input id="newUser" placeholder="Nom caissier">
+<input id="newPass" type="password" placeholder="Mot de passe">
+<button class="admin" onclick="addCashier()">Ajouter caissier</button>
+
+<hr>
+
+<h4>⚖️ Ajustement balance</h4>
+<select id="adjService">
+<option>Moncash</option>
+<option>Natcash</option>
+</select>
+<input id="adjAmount" type="number" placeholder="Montant (+ ou -)">
+<button class="admin" onclick="adjustBalance()">Appliquer ajustement</button>
+
+<hr>
+<button class="admin" onclick="resetAll()">⚠️ RESET (ESSAI)</button>
+</div>
+
+<!-- TRANSACTION -->
+<div class="card hidden" id="transactionZone">
+<h3>Transaction</h3>
+<input id="client" placeholder="Nom client">
+<input id="clientPhone" placeholder="Téléphone client">
+<select id="service"><option>Moncash</option><option>Natcash</option></select>
+<select id="type"><option value="depot">Dépôt</option><option value="retrait">Retrait</option></select>
+<input id="amount" type="number" placeholder="Montant">
+<button onclick="addTransaction()">Valider + Imprimer</button>
+</div>
+
+<!-- SOLDES -->
+<div class="card hidden" id="balanceZone">
+<p>Moncash : <b id="m">0</b></p>
+<p>Natcash : <b id="n">0</b></p>
+</div>
+
+<!-- RAPPORT -->
+<div class="card hidden" id="reportZone">
+
+<div style="display:flex;gap:10px;margin-bottom:10px">
+<button onclick="printJournal()">🖨️ Imprimer journal</button>
+<button onclick="exportCSV()">⬇️ Télécharger journal</button>
+</div>
+
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Date</th>
+<th>Client</th>
+<th>Téléphone</th>
+<th>Service</th>
+<th>Type</th>
+<th>Montant</th>
+<th>Caissier</th>
+</tr>
+</thead>
+<tbody id="history"></tbody>
+</table>
+</div>
+
+</div>
+
+<!-- TICKET -->
+<div id="ticket" class="hidden">
+<center>
+<img id="logoTicket" height="35"><br>
+<b id="companyTicket"></b><br>
+<small id="ticketAddress"></small><br>
+<small id="ticketPhone"></small>
+</center>
+<hr>
+<p id="tDate"></p>
+<p id="t0"></p>
+<p id="t1"></p>
+<p id="tPhone"></p>
+<p id="t2"></p>
+<p id="t3"></p>
+<p id="t4"></p>
+<hr>
+<center>Merci pour votre confiance 🙏</center>
+</div>
+
+<script>
+/* UTIL */
+function hash(str){
+ let h=0;
+ for(let i=0;i<str.length;i++){
+  h=(h<<5)-h+str.charCodeAt(i);
+  h|=0;
+ }
+ return h.toString();
+}
+
+function nowDate(){
+ const d=new Date();
+ return d.toISOString().slice(0,16).replace("T"," ");
+}
+
+/* LICENCE */
+const ACTIVATION_CODE="CMPRO-6M-2026";
+const CONTACT="📞 509 3778-11-06\n✉️ lucienhyppolite7@gmail.com";
+const SIX_MONTHS=180*24*60*60*1000;
+const WARNING=5*24*60*60*1000;
+
+/* STORAGE */
+let store=JSON.parse(localStorage.getItem("store"))||{
+ installDate:Date.now(),
+ activated:false,
+ company:{name:"CASH MANAGER PRO",address:"",phone:"",logo:"https://via.placeholder.com/120"},
+ users:{},
+ data:{Moncash:0,Natcash:0,history:[],counter:0}
+};
+
+let currentUser=null;
+const save=()=>localStorage.setItem("store",JSON.stringify(store));
+
+/* LICENCE CHECK */
+function checkLicence(){
+ const now=Date.now();
+ const end=store.installDate+SIX_MONTHS;
+ if(now>=end-WARNING && now<end) alert("⚠️ Licence bientôt expirée\n"+CONTACT);
+ if(now>=end && !store.activated){
+  const code=prompt("Licence expirée.\nEntrez code d’activation :");
+  if(code===ACTIVATION_CODE){store.activated=true;save();}
+  else{alert("Logiciel bloqué\n"+CONTACT);throw "BLOCKED";}
+ }
+}
+
+/* INIT */
+(function(){
+ checkLicence();
+ if(!store.users.admin){
+  store.users.admin={pass:hash("admin123")};
+  save();
+ }
+ applyCompany();
+ updateAll();
+})();
+
+/* COMPANY */
+function applyCompany(){
+ companyHeader.innerText=companyTicket.innerText=store.company.name;
+ companyAddress.innerText=ticketAddress.innerText=store.company.address;
+ companyPhone.innerText=ticketPhone.innerText=store.company.phone;
+ logoHeader.src=logoTicket.src=store.company.logo;
+}
+
+function saveCompany(){
+ store.company={
+  name:companyName.value,
+  address:companyAddressInput.value,
+  phone:companyPhoneInput.value,
+  logo:companyLogo.value
+ };
+ applyCompany();save();
+}
+
+/* LOGIN */
+function login(){
+ checkLicence();
+ const u=user.value.trim();
+ const p=hash(pass.value.trim());
+ if(!store.users[u]||store.users[u].pass!==p) return alert("Identifiants incorrects");
+ currentUser=u;
+ loginCard.classList.add("hidden");
+ logoutBtn.classList.remove("hidden");
+ transactionZone.classList.remove("hidden");
+ balanceZone.classList.remove("hidden");
+ reportZone.classList.remove("hidden");
+ if(u==="admin") adminZone.classList.remove("hidden");
+}
+
+function logout(){location.reload();}
+
+/* TRANSACTION */
+function addTransaction(){
+ const a=Number(amount.value);
+ const s=service.value;
+ const t=type.value;
+ if(t==="retrait" && a>store.data[s]) return alert("Solde insuffisant");
+
+ store.data.counter++;
+ store.data[s]+=t==="depot"?a:-a;
+
+ const tr={
+  id:"TX-"+store.data.counter,
+  date:nowDate(),
+  client:client.value,
+  phone:clientPhone.value,
+  service:s,
+  type:t,
+  amount:a,
+  user:currentUser
+ };
+
+ store.data.history.push(tr);
+ save();
+ printTicket(tr);
+ updateAll();
+}
+
+/* TICKET */
+function printTicket(x){
+ tDate.innerText="Date : "+x.date;
+ t0.innerText="Transaction : "+x.id;
+ t1.innerText="Client : "+x.client;
+ tPhone.innerText="Téléphone : "+x.phone;
+ t2.innerText="Service : "+x.service;
+ t3.innerText="Type : "+x.type;
+ t4.innerText="Montant : "+x.amount;
+ ticket.classList.remove("hidden");
+ window.print();
+ ticket.classList.add("hidden");
+}
+
+/* JOURNAL */
+function printJournal(){
+ let html=`
+ <center>
+ <img src="${store.company.logo}" height="35"><br>
+ <b>${store.company.name}</b><br>
+ <small>${store.company.address}</small><br>
+ <small>${store.company.phone}</small>
+ </center><hr>`;
+
+ store.data.history.forEach(x=>{
+  html+=`
+  <p>
+  <b>${x.id}</b><br>
+  Date : ${x.date}<br>
+  ${x.client} (${x.phone})<br>
+  ${x.service} - ${x.type}<br>
+  Montant : ${x.amount}<br>
+  Caissier : ${x.user}
+  </p><hr>`;
+ });
+
+ const w=window.open("","","width=300");
+ w.document.write(`<html><body style="font-family:Arial;width:80mm">${html}</body></html>`);
+ w.print();w.close();
+}
+
+/* RAPPORT */
+function updateAll(){
+ m.innerText=store.data.Moncash;
+ n.innerText=store.data.Natcash;
+ history.innerHTML="";
+ store.data.history.forEach(x=>{
+  history.innerHTML+=`
+  <tr>
+  <td>${x.id}</td>
+  <td>${x.date}</td>
+  <td>${x.client}</td>
+  <td>${x.phone}</td>
+  <td>${x.service}</td>
+  <td>${x.type}</td>
+  <td>${x.amount}</td>
+  <td>${x.user}</td>
+  </tr>`;
+ });
+}
+
+/* EXPORT CSV */
+function exportCSV(){
+ let csv="ID,Date,Client,Telephone,Service,Type,Montant,Caissier\n";
+ store.data.history.forEach(x=>{
+  csv+=`${x.id},${x.date},${x.client},${x.phone},${x.service},${x.type},${x.amount},${x.user}\n`;
+ });
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(new Blob([csv]));
+ a.download="journal_transactions.csv";
+ a.click();
+}
+</script>
+
+</body>
+</html>
